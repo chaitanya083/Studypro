@@ -1,0 +1,55 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.0
+    command:
+      - start-dev
+      - --http-port=8080
+      - --health-enabled=true
+      - --http-management-health-enabled=false
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change-this-password}
+    ports:
+      - "8080:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+    healthcheck:
+      # Keycloak's official image has bash but no curl. /dev/tcp is the
+      # documented container-healthcheck approach.
+      test:
+        [
+          "CMD-SHELL",
+          "{ printf 'HEAD /health/ready HTTP/1.0\r\n\r\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/127.0.0.1/8080"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-studypro}
+      KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_ADMIN_REALM:-master}
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change-this-password}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-studypro-api}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
+      KEYCLOAK_TIMEOUT: ${KEYCLOAK_TIMEOUT:-15}
+      KEYCLOAK_BOOTSTRAP_ON_STARTUP: ${KEYCLOAK_BOOTSTRAP_ON_STARTUP:-true}
+      DATABASE_URL: sqlite:///./data/studypro.sqlite3
+    ports:
+      - "8000:8000"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - sqlite_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  keycloak_data:
+  sqlite_data:
